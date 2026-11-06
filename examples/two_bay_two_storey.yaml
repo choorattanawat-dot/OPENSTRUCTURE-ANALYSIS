@@ -1,0 +1,140 @@
+# Two-bay, two-storey reinforced-concrete frame.
+#
+# Illustrative office-frame line loads, not a load takeoff. Global y is upward.
+# Beam section h_mm is the vertical depth. Column sections are square, so the
+# in-plane inertia does not depend on which way local y points.
+#
+# Ec is set explicitly. If it is omitted, the loader uses 4700√f'c MPa
+# (ACI 318-19 §19.2.2.1) and records that only as an analysis input.
+
+metadata:
+  title: Two-bay two-storey RC frame
+  description: >
+    Example model for OPENSTRUCTURE-ANALYSIS v0.1. Bay width 6 m, storey
+    height 3.5 m. Design checks cover one beam and one base column to both
+    EIT 1008 and ACI 318-19.
+
+materials:
+  - id: C28
+    fc_mpa: 28
+    fy_mpa: 400
+    ec_mpa: 24870.1
+
+sections:
+  - id: COL400
+    type: rectangular
+    material: C28
+    b_mm: 400
+    h_mm: 400
+  - id: BEAM300x500
+    type: rectangular
+    material: C28
+    b_mm: 300
+    h_mm: 500
+
+nodes:
+  - {id: N00, x_m: 0, y_m: 0}
+  - {id: N10, x_m: 6, y_m: 0}
+  - {id: N20, x_m: 12, y_m: 0}
+  - {id: N01, x_m: 0, y_m: 3.5}
+  - {id: N11, x_m: 6, y_m: 3.5}
+  - {id: N21, x_m: 12, y_m: 3.5}
+  - {id: N02, x_m: 0, y_m: 7.0}
+  - {id: N12, x_m: 6, y_m: 7.0}
+  - {id: N22, x_m: 12, y_m: 7.0}
+
+supports:
+  - {node: N00, fixed: true}
+  - {node: N10, fixed: true}
+  - {node: N20, fixed: true}
+
+members:
+  - {id: C00, i: N00, j: N01, section: COL400}
+  - {id: C01, i: N01, j: N02, section: COL400}
+  - {id: C10, i: N10, j: N11, section: COL400}
+  - {id: C11, i: N11, j: N12, section: COL400}
+  - {id: C20, i: N20, j: N21, section: COL400}
+  - {id: C21, i: N21, j: N22, section: COL400}
+  - {id: B10, i: N01, j: N11, section: BEAM300x500}
+  - {id: B11, i: N11, j: N21, section: BEAM300x500}
+  - {id: B20, i: N02, j: N12, section: BEAM300x500}
+  - {id: B21, i: N12, j: N22, section: BEAM300x500}
+
+load_cases:
+  - {id: DL, kind: dead}
+  - {id: LL, kind: live}
+  - {id: WX, kind: wind, reversible: true}
+
+loads:
+  nodal:
+    # Example wind at the floor levels, applied to the left column line.
+    - {node: N02, case: WX, fx_kN: 18}
+    - {node: N01, case: WX, fx_kN: 10}
+  member_udl:
+    # Beams: stated line load, global y positive upward, so gravity is negative.
+    - {member: B10, case: DL, system: global, wy_kN_per_m: -28}
+    - {member: B11, case: DL, system: global, wy_kN_per_m: -28}
+    - {member: B20, case: DL, system: global, wy_kN_per_m: -22}
+    - {member: B21, case: DL, system: global, wy_kN_per_m: -22}
+    - {member: B10, case: LL, system: global, wy_kN_per_m: -10}
+    - {member: B11, case: LL, system: global, wy_kN_per_m: -10}
+    - {member: B20, case: LL, system: global, wy_kN_per_m: -6}
+    - {member: B21, case: LL, system: global, wy_kN_per_m: -6}
+    # Column self-weight, 0.4 m × 0.4 m × 25 kN/m³ = 4 kN/m, along local −x
+    # (local x points from the lower node to the upper node).
+    - {member: C00, case: DL, system: local, wx_kN_per_m: -4}
+    - {member: C01, case: DL, system: local, wx_kN_per_m: -4}
+    - {member: C10, case: DL, system: local, wx_kN_per_m: -4}
+    - {member: C11, case: DL, system: local, wx_kN_per_m: -4}
+    - {member: C20, case: DL, system: local, wx_kN_per_m: -4}
+    - {member: C21, case: DL, system: local, wx_kN_per_m: -4}
+
+combinations:
+  # EIT gravity is 1.4D+1.7L. Wind pairs are flagged assumptions; see the report.
+  preset: EIT1008
+  explicit:
+    - name: ACI-1.4D
+      factors: {DL: 1.4}
+      expression: "1.4D"
+      reference: "ACI 318-19 §5.3.1(a)"
+    - name: ACI-1.2D+1.6L
+      factors: {DL: 1.2, LL: 1.6}
+      expression: "1.2D + 1.6L"
+      reference: "ACI 318-19 §5.3.1(b) with no roof live, snow, or rain"
+
+analysis:
+  kind: linear_static
+  transformation: Linear
+  n_stations: 21
+
+design:
+  - id: beam_B10_flexure
+    type: beam_flexure
+    member: B10
+    combinations: all
+    code: [EIT1008, ACI318-19]
+    d_mm: 440
+    d_prime_mm: 60
+  - id: beam_B10_shear
+    type: beam_shear
+    member: B10
+    combinations: all
+    code: [EIT1008, ACI318-19]
+    d_mm: 440
+    # Centre-line model: column face is 200 mm from the node.
+    face_offset_mm: 200
+    stirrup_diameter_mm: 9
+    legs: 2
+    spacing_step_mm: 25
+  - id: column_C00
+    type: column_pm
+    member: C00
+    combinations: all
+    code: [EIT1008, ACI318-19]
+    confinement: tied
+    reinforcement:
+      layout: perimeter
+      n_along_b: 3
+      n_along_h: 3
+      bar_diameter_mm: 20
+      cover_to_center_mm: 60
