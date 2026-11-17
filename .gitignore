@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+# project models and results stay out of the public repository
+*.e2k
+*.$et
+*.EDB
+models/
+out/
+*_results.json
+*.npz
