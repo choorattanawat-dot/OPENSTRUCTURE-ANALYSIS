@@ -36,6 +36,7 @@ class Model:
         self.story_z = sorted(round(z) for z in built["elev"].values())  # mm
         self.fixed = set(built["fixed"])
         self.tcl = []
+        self._frame_forces, self._reactions = {}, {}
         self._prepare_loads_and_mass()
 
     # ------------------------------------------------------------------ construction
@@ -227,6 +228,8 @@ class Model:
             self._static_setup()
             ok = ops.analyze(1)
             ops.reactions()
+            self._frame_forces[pat] = self._read_frame_forces()
+            self._reactions[pat] = {n: ops.nodeReaction(n) for n in self.fixed}
             out[pat] = dict(ok=ok, applied_kN=sum(nl.values()),
                             applied_free_kN=sum(w for n, w in nl.items() if n not in self.fixed),
                             base_Rz_kN=sum(ops.nodeReaction(n, 3) for n in self.fixed),
@@ -237,6 +240,41 @@ class Model:
             ops.setTime(0.0)
             ops.reset()
         return out
+
+    def _read_frame_forces(self):
+        """End forces of every frame object (column per story, beam) in ETABS-like terms.
+        P compression positive (kN); M2, M3 = bending moment about ETABS local 2 and 3 (kN-m) at the
+        bottom (i) and top (j) end, same sign convention at both ends (same sign = single curvature);
+        V2, V3 shear magnitudes."""
+        groups = defaultdict(list)
+        for fr in self.B["frames"]:
+            groups[(fr["obj"], fr["story"], fr["kind"])].append(fr)
+        coords = self.B["coords"]
+        out = {}
+        for (obj, story, kind), segs in groups.items():
+            key = (lambda f: coords[f["n"][0] - 1][2]) if kind == "col" else (lambda f: coords[f["n"][0] - 1][:2])
+            segs = sorted(segs, key=key)
+            fi = ops.eleResponse(segs[0]["tag"], "localForce")
+            fj = ops.eleResponse(segs[-1]["tag"], "localForce")
+            # OpenSees local z = ETABS local 2, local y = ETABS local 3 (see build_ops)
+            out[(obj, story)] = dict(kind=kind, sec=segs[0]["d"]["sec"], L=sum(f["L"] for f in segs),
+                                     P=fi[0], P_top=-fj[6], V2=abs(fi[2]), V3=abs(fi[1]), T=fi[3],
+                                     M3_i=fi[4], M3_j=-fj[10], M2_i=fi[5], M2_j=-fj[11])
+        return out
+
+    def frame_forces(self, patterns=None):
+        """{pattern: {(object, story): forces}} from linear static analysis of each load pattern."""
+        pats = [p for p in (patterns or self.patterns) if self.loads.get(p)]
+        if any(p not in self._frame_forces for p in pats):
+            self.gravity(pats)
+        return {p: self._frame_forces[p] for p in pats}
+
+    def reactions(self, patterns=None):
+        """{pattern: {support node: [Fx, Fy, Fz, Mx, My, Mz]}} (kN, kN-m)."""
+        pats = [p for p in (patterns or self.patterns) if self.loads.get(p)]
+        if any(p not in self._reactions for p in pats):
+            self.gravity(pats)
+        return {p: self._reactions[p] for p in pats}
 
     def modal(self, n_modes=12):
         """Eigen analysis. Returns periods (s) and modal participating mass ratios (UX, UY, RZ)."""

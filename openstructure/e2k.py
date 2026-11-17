@@ -200,6 +200,36 @@ def parse_e2k(path):
                 aload.append((t[0], t[1], m.group(1), float(m.group(2)) * stress))
     M["aload"] = aload
 
+    # ---- reinforcement data of concrete frame sections (lengths mm, areas mm^2)
+    rc = {}
+    for l in secs.get("CONCRETE SECTIONS", []):
+        n = _q(l)[0]
+        d = {"type": (re.search(r'TYPE "([^"]+)"', l) or [None, None])[1]}
+        for k in ("LONGBARMATERIAL", "CONFINEBARMATERIAL", "PATTERN", "TRANSREINF"):
+            m = re.search(rf'{k} "([^"]+)"', l)
+            if m:
+                d[k.lower()] = m.group(1)
+        for k, f in (("COVER", fL), ("COVERTOP", fL), ("COVERBOTTOM", fL), ("CONFINEBARSPACING", fL),
+                     ("LONGBARAREA", fL ** 2), ("CONFINEBARAREA", fL ** 2), ("CORNERBARAREA", fL ** 2)):
+            v = _num(l, k)
+            if v is not None:
+                d[k.lower()] = v * f
+        for k in ("NUMCONFINEBARS3", "NUMCONFINEBARS2", "NUMBARS3", "NUMBARS2"):
+            v = _num(l, k)
+            if v is not None:
+                d[k.lower()] = int(v)
+        rc[n] = d
+    M["rcsec"] = rc
+
+    # ---- load combinations: name -> {load case: factor}
+    combos = OrderedDict()
+    for l in secs.get("LOAD COMBINATIONS", []):
+        t = _q(l)
+        m = re.search(r'LOADCASE "([^"]+)"\s+SF\s+([-\d.Ee+]+)', l)
+        if m:
+            combos.setdefault(t[0], {})[m.group(1)] = float(m.group(2))
+    M["combos"] = combos
+
     # ---- features read but not modelled yet (reported, never silently dropped)
     unsupported = []
     if secs.get("POINT OBJECT LOADS"):

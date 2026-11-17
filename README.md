@@ -85,6 +85,26 @@ print(format_elf(res))
 Ta = 0.02H, Cs = Sa·I/R ≥ 0.01, การกระจายแรง Cvx, δx = Cd·δxe/I เทียบ Δa (ตาราง 2.11-1) และ θ (สมการ 3.8-1)
 ยังไม่มี: สเปกตรัมแอ่งกรุงเทพ, accidental torsion, RSA
 
+## ตรวจออกแบบเสา คสล. (ACI 318-14)
+
+```python
+from openstructure.design.column import check_columns, format_columns
+rows, secs = check_columns(m, lu_deduct=0.25)          # ใช้ load combination และเหล็กเสริมจาก e2k
+rows, secs = check_columns(m, fc=37.3, combos={"U2": {"DL": 1.2, "SDL": 1.2, "LL": 1.6}})
+print(format_columns(rows, secs, top=20))               # เรียงจาก D/C มากไปน้อย
+m.frame_forces()                                         # แรงในเสา/คานของแต่ละ load pattern
+```
+
+- แรง Pu, M2, M3 มาจาก OpenSees (รวม pattern ตาม combo แบบเชิงเส้น) แรงอัดเสาตรงกับ ETABS ภายใน 1–2 %
+- กำลังหน้าตัด: interaction surface P-M2-M3 จาก strain compatibility (εcu 0.003, Whitney block, φ 0.65–0.90
+  ตาม εt, จำกัด φPn ≤ 0.80φPo) แล้วหา D/C ตามแนวรังสีจากจุดกำเนิด
+- ความชะลูด: k = 1, r = 0.3h, (EI)eff = 0.4EcIg/(1+βdns), Cm, M2,min = Pu(15+0.03h), δns = Cm/(1−Pu/0.75Pc)
+  ชั้น sway ใช้ขีดจำกัด klu/r ≤ 22 (ค่าเริ่มต้น `sway=True`) ชั้น nonsway ใช้ 34+12(M1/M2) ≤ 40
+- `PATTERN "R-a-b"` อ่านเป็น a เส้นต่อด้านที่ขนานแกน 3 และ b เส้นต่อด้านที่ขนานแกน 2 ถ้าแบบจริงต่างให้ใส่
+  `n_face3=`, `n_face2=`
+- ยังไม่ได้ทำ: δs สำหรับ combo แรงด้านข้าง (ให้ใช้ผล P-Delta), live load reduction, แรงเฉือน, รายละเอียดเหล็กปลอก
+- ลำดับถัดไป: lift core (ผนัง) → พื้น PT → บันได → ฐานราก
+
 ## ข้อตกลงการแปลง (ห้ามเปลี่ยนเงียบ ๆ ถ้าเปลี่ยนต้องขึ้นเวอร์ชันและรัน test ใหม่)
 
 - สร้างเฉพาะ object ที่มี LINE/AREA ASSIGNS
@@ -105,7 +125,7 @@ Ta = 0.02H, Cs = Sa·I/R ≥ 0.01, การกระจายแรง Cvx, δx
 
 1. ✅ ตัวสร้างโมเดล + ตรวจสอบกับ ETABS (gravity, mass, modal)
 2. ✅ P-Delta, stability Q, story drift, ELF ตาม มยผ. 1301/1302-61 ⬜ RSA, accidental torsion, แอ่งกรุงเทพ
-3. ตรวจออกแบบ คสล. (ACI 318 / วสท.)
+3. ตรวจออกแบบ คสล. (ACI 318-14): ✅ เสา ⬜ lift core, พื้น PT, บันได, ฐานราก
 4. Nonlinear: fiber section, pushover, NLTHA, IDA
 5. รายงาน + 3D viewer
 

@@ -13,4 +13,4 @@ dependencies = ["openseespy", "numpy"]
 test = ["pytest"]
 
 [tool.setuptools]
-packages = ["openstructure"]
+packages = ["openstructure", "openstructure.design"]
