@@ -17,31 +17,42 @@ Not covered: strut-and-tie (13.2.6.3), lateral pile loads, pile tension anchorag
 import math
 from dataclasses import dataclass, field
 
-ROWS = {1: [1], 2: [2], 3: [2, 1], 4: [2, 2], 6: [3, 3], 7: [2, 3, 2], 8: [3, 2, 3],
-        9: [3, 3, 3], 10: [3, 4, 3], 11: [4, 3, 4], 12: [4, 4, 4], 16: [4, 4, 4, 4]}
+S3 = math.sqrt(3) / 2
+# CRSI standard patterns (Design Guide for Pile Caps 2015, Fig. 4.4 and Appendix A) in units of the pile spacing L:
+# {n: [(|y|, [|x|, ...]), ...]}; every row is mirrored in x and y. They reproduce Ix, Iy of Table 6.1 / Appendix A.
+PATTERNS = {
+    1: [(0, [0])], 2: [(0, [.5])], 4: [(.5, [.5])], 5: [(0, [0]), (math.sqrt(.5), [math.sqrt(.5)])],
+    6: [(.5, [0, 1])], 7: [(0, [0, 1]), (S3, [.5])], 8: [(0, [.5]), (S3, [0, 1])], 9: [(0, [0, 1]), (1, [0, 1])],
+    10: [(0, [.5, 1.5]), (S3, [0, 1])], 11: [(0, [0, 1]), (S3, [.5, 1.5])], 12: [(0, [.5, 1.5]), (1, [.5, 1.5])],
+    13: [(0, [0, 2 * S3]), (.5, [S3]), (1, [0, 2 * S3])],
+    14: [(.5, [.5, 1.5]), (.5 + S3, [0, 1])],
+    15: [(0, [0]), (.5, [S3]), (1, [0, 2 * S3]), (1.5, [S3])],
+    16: [(.5, [.5, 1.5]), (1.5, [.5, 1.5])],
+    17: [(0, [0, 2 * S3]), (.5, [S3]), (1, [0, 2 * S3]), (1.5, [S3])],
+    18: [(0, [S3]), (.5, [0, 2 * S3]), (1, [S3]), (1.5, [0, 2 * S3])],
+    19: [(0, [0]), (.5, [S3, S3 + 1]), (1, [0]), (1.5, [S3, S3 + 1])],
+    20: [(.5, [0, 1, 2]), (1.5, [0, 1, 2])],
+    21: [(0, [0, 1]), (1, [0, 1]), (.5, [1 + S3]), (1.5, [1 + S3]), (1 + S3, [.5])],
+    22: [(0, [.5, 1.5]), (S3, [0, 1, 2]), (2 * S3, [.5, 1.5])],
+    23: [(0, [0, 1, 2]), (1, [0, 1, 2]), (1 + S3, [.5, 1.5])],
+    24: [(0, [.5, 1.5]), (S3, [0, 1, 2]), (S3 + 1, [0, 1, 2])],
+    26: [(0, [.5 + S3]), (1, [.5 + S3]), (2, [.5 + S3]), (.5, [.5, .5 + 2 * S3]), (1.5, [.5, .5 + 2 * S3])],
+    28: [(0, [.5, .5 + 2 * S3]), (1, [.5, .5 + 2 * S3]), (2, [.5, .5 + 2 * S3]), (.5, [.5 + S3]), (1.5, [.5 + S3])],
+    30: [(0, [.5, 1.5, 2.5]), (1, [.5, 1.5, 2.5]), (2, [.5, 1.5, 2.5])],
+}
 
 
 def pile_layout(n, spacing, rotate=False):
-    """CRSI standard pattern (Design Guide for Pile Caps 2015, Fig. 4.4) for n = 1..13 or 16 piles, centred on the
-    origin, centre-to-centre distance >= spacing. Rows run along x (the long side A); rows with different counts
-    are staggered (row distance 0.866 spacing). The patterns reproduce Ix, Iy of CRSI Table 6.1 (see tests).
-    rotate=True turns the pattern so that the long side runs along y."""
-    L = spacing
-    if n == 5:                                  # four piles on the diagonals at L from the centre pile
-        a = L / math.sqrt(2)
-        pts = [(-a, -a), (a, -a), (0.0, 0.0), (-a, a), (a, a)]
-    elif n == 13:                               # quincunx: rows 3-2-3-2-3, row distance L / 2
-        r3, r2 = (-math.sqrt(3) * L, 0.0, math.sqrt(3) * L), (-math.sqrt(3) / 2 * L, math.sqrt(3) / 2 * L)
-        pts = [(x, y) for y, r in zip((-L, -L / 2, 0.0, L / 2, L), (r3, r2, r3, r2, r3)) for x in r]
+    """CRSI standard pattern for n piles (2-24, 26, 28, 30), centred on the origin, centre-to-centre distance
+    >= spacing, long side A along x. rotate=True puts the long side along y."""
+    if n == 3:                                  # triangle, centroid at the origin
+        h = math.sqrt(3) / 2 * spacing
+        pts = [(-spacing / 2, -h / 3), (spacing / 2, -h / 3), (0.0, 2 * h / 3)]
     else:
-        rows = ROWS[n]
-        ys = [0.0]
-        for a, b in zip(rows, rows[1:]):
-            ys.append(ys[-1] + L * (1.0 if a == b else math.sqrt(3) / 2))
-        pts = [((i - (m - 1) / 2) * L, y) for m, y in zip(rows, ys) for i in range(m)]
-    cx = sum(p[0] for p in pts) / n
-    cy = sum(p[1] for p in pts) / n
-    pts = [(x - cx, y - cy) for x, y in pts]
+        pts = sorted({(sx * x * spacing, sy * y * spacing) for y, xs in PATTERNS[n] for x in xs
+                      for sx in (1, -1) for sy in (1, -1)}, key=lambda p: (p[1], p[0]))
+        pts = [(x + 0.0, y + 0.0) for x, y in pts]          # no negative zeros
+    assert len(pts) == n, (n, len(pts))
     return [(y, x) for x, y in pts] if rotate else pts
 
 
@@ -56,6 +67,7 @@ class PileCap:
     edge: float = None             # pile centre to cap edge, m (default: pile size, at least 0.3 m)
     d_offset: float = 0.15         # h - d: pile embedment + cover + bar layers, m
     round_pile: bool = False
+    round_col: bool = False        # round column of diameter col[0] (CRSI uses one for 3- and 7-pile caps)
     gamma_c: float = 24.0
     Lx: float = field(init=False)
     Ly: float = field(init=False)
@@ -183,7 +195,7 @@ def crsi_check(cap, R, phi_v=0.85, phi_f=0.90, tol=0.075, weight_factor=None, lo
     tolerance (3 in.), added to every pile distance. Piles are treated as round with the same area.
 
     Limit states (CRSI numbering):  1 two-way at d/2 from the column,  2/3 one-way at d from the column,
-    4 two-way at the column face (only when w < d/2),  5/6 one-way at the column face (only when w < d),
+    4 two-way at the column face (when w < d; mandatory when w < d/2),  5/6 one-way at the column face (only when w < d),
     P1 single pile punching, P2 two adjacent piles, P3 corner pile punching, P4 corner pile one-way.
     w = distance from the column face to the nearest pile line, including tol. Direction "x" means a section
     normal to x. For a rectangular column cx and cy are used per direction and (1 + d/c) of limit state 4 becomes
@@ -224,17 +236,22 @@ def crsi_check(cap, R, phi_v=0.85, phi_f=0.90, tol=0.075, weight_factor=None, lo
         fl[ax] = dict(Mu=Mu, width=width, As=As, As_req=req)
     beta = max(A, B) / min(A, B)
     short = "x" if A < B else "y"                           # bars spanning the short side
-    if beta > 1.0 + 1e-9:
-        fl[short]["As_req"] *= 2 * beta / (beta + 1)        # uniform spacing instead of the ACI 13.3.3.3 band
+    if beta > 1.0 + 1e-9:                                   # uniform spacing instead of the ACI 13.3.3.3 band:
+        f = fl[short]                                       # calculated As x 2 beta / (beta + 1), minimum steel unchanged
+        f["As_req"] = max(f["As_req"], f["As"] * 2 * beta / (beta + 1))
     out["flexure"] = fl
 
     # 1: two-way at d/2 from the column
     a, b = (c["x"] + d) / 2, (c["y"] + d) / 2
-    Vu = sum(r for p, r in zip(cap.piles, R) if coord(p, "x") > a or coord(p, "y") > b) - q * (A * B - 4 * a * b)
-    bo = 4 * (a + b)
-    bc = max(c.values()) / min(c.values())
-    vc = min(4.0, 2 + 4 / bc, 40 * d / bo + 2) * PSI * rt
-    out["1 two-way d/2"] = dict(Vu=Vu, phiVc=phi_v * vc * bo * d * 1e3)
+    if cap.round_col:
+        Vu = sum(r for p, r in zip(cap.piles, R) if math.hypot(*p) + tol > a) - q * (A * B - math.pi * a * a)
+        bo, vc = 2 * math.pi * a, min(4.0, 40 * d / (2 * math.pi * a) + 2) * PSI * rt
+    else:
+        Vu = sum(r for p, r in zip(cap.piles, R) if coord(p, "x") > a or coord(p, "y") > b) - q * (A * B - 4 * a * b)
+        bo = 4 * (a + b)
+        bc = max(c.values()) / min(c.values())
+        vc = min(4.0, 2 + 4 / bc, 40 * d / bo + 2) * PSI * rt
+    out["1 two-way d/2"] = dict(Vu=max(Vu, 0.0), phiVc=phi_v * vc * bo * d * 1e3)
     # 2, 3: one-way at d from the column face
     for ax, tag in (("x", "2/3 one-way at d, section normal to x"), ("y", "2/3 one-way at d, section normal to y")):
         k, width, L_ = (0 if ax == "x" else 1), side["y" if ax == "x" else "x"], side[ax]
@@ -244,13 +261,17 @@ def crsi_check(cap, R, phi_v=0.85, phi_f=0.90, tol=0.075, weight_factor=None, lo
         out[tag] = dict(Vu=max(Vu, 0.0), phiVc=phi_v * 2 * PSI * rt * width * d * 1e3)
     # 4: two-way at the column face
     ws = {ax: w_of(ax) for ax in ("x", "y")}
-    wv = [w for w in ws.values() if w is not None]
-    if wv and min(wv) < d / 2:
+    wv = sorted({round(w, 6) for w in ws.values() if w is not None})
+    if cap.round_col:                                       # radial distance to the nearest pile outside the column
+        rr = [math.hypot(*p) + tol - c["x"] / 2 for p in cap.piles if math.hypot(*p) > c["x"] / 2]
+        wv = [min(rr)] if rr else []
+    if wv and min(wv) < d:              # CRSI text: needed when w < d/2; its examples evaluate it whenever w < d
         bs = 2 * (c["x"] + c["y"])
         Vu = sum(r for p, r in zip(cap.piles, R) if coord(p, "x") - tol > c["x"] / 2 or coord(p, "y") - tol > c["y"] / 2)
         Vu -= q * (A * B - c["x"] * c["y"])
-        vcs = [min(d / w * (1 + 4 * d / bs) * 2 * PSI * rt, 32 * PSI * rt) for w in wv]
-        out["4 two-way at column face"] = dict(Vu=Vu, phiVc=phi_v * sum(vcs) / len(vcs) * bs * d * 1e3, w=ws)
+        caps = [phi_v * min(d / w * (1 + 4 * d / bs) * 2 * PSI * rt, 32 * PSI * rt) * bs * d * 1e3 for w in wv]
+        dc4 = sum(Vu / v for v in caps) / len(caps)         # different w in x and y: average of the two ratios (example 3)
+        out["4 two-way at column face"] = dict(Vu=Vu, phiVc=Vu / dc4, phiVc_each=caps, w=ws, required=min(wv) < d / 2)
     # 5, 6: one-way at the column face
     for ax in ("x", "y"):
         w = ws[ax]
