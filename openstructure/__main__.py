@@ -11,6 +11,8 @@ def main():
     ap.add_argument("e2k", help="ETABS model text export (.e2k)")
     ap.add_argument("tables", nargs="?", help="ETABS result tables exported as text (optional, for verification)")
     ap.add_argument("--modes", type=int, default=12)
+    ap.add_argument("--stability", action="store_true",
+                    help="story drift, stability index Q and P-Delta amplification (1.2D + 1.0L, F ~ m*z)")
     ap.add_argument("--out", help="write results to this JSON file")
     a = ap.parse_args()
     m = Model.from_e2k(a.e2k)
@@ -33,6 +35,11 @@ def main():
         for i, t in enumerate(mod["periods_s"], 1):
             print(f"T{i} = {t:.4f} s   UX {mod['UX'][i-1]:.1f} %  UY {mod['UY'][i-1]:.1f} %  RZ {mod['RZ'][i-1]:.1f} %")
         res = {"gravity": g, "modal": mod}
+    if a.stability:
+        from .stability import format_stability
+        st = m.stability()
+        print(format_stability(st))
+        res["stability"] = st
     if a.out:
         res.update(info=info, mass_total_t=m.total_mass, story_mass_t=m.story_mass())
         json.dump(res, open(a.out, "w"), indent=1, default=float)

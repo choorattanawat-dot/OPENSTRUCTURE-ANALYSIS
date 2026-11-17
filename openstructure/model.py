@@ -112,8 +112,9 @@ class Model:
         self.tcl.append(name + " " + " ".join(str(x) for x in a))
         getattr(ops, name)(*a)
 
-    def build_ops(self):
-        """Create the model in OpenSees (nodes, fixities, elements, masses)."""
+    def build_ops(self, pdelta=False):
+        """Create the model in OpenSees (nodes, fixities, elements, masses).
+        pdelta=True uses the PDelta geometric transformation for columns."""
         global _LIVE
         M, B, cmd = self.M, self.B, self._cmd
         self.tcl = []
@@ -161,9 +162,10 @@ class Model:
                 if abs(fr["d"]["ang"]) > 1e-6:
                     raise NotImplementedError(f"rotated beam {fr['obj']}")
                 v = (0.0, 0.0, 1.0)
+            v = v + (fr["kind"] == "col",)
             if v not in transf:
                 transf[v] = len(transf) + 1
-                cmd("geomTransf", "Linear", transf[v], *v)
+                cmd("geomTransf", "PDelta" if pdelta and fr["kind"] == "col" else "Linear", transf[v], *v[:3])
             etag += 1
             # vecxz = ETABS local-2 -> Iz = I22, Iy = I33
             cmd("element", "elasticBeamColumn", etag, i, j, pr["A"], pr["E"], pr["G"], pr["J"], pr["I33"], pr["I22"], transf[v])
@@ -171,11 +173,11 @@ class Model:
         for n, m in self.mass.items():
             if n not in self.fixed and m > 0:
                 cmd("mass", n, m, m, 0.0, 0.0, 0.0, 0.0)
-        _LIVE = id(self)
+        _LIVE = (id(self), bool(pdelta))
 
-    def _ensure(self):
-        if _LIVE != id(self):
-            self.build_ops()
+    def _ensure(self, pdelta=False):
+        if _LIVE != (id(self), bool(pdelta)):
+            self.build_ops(pdelta)
 
     # ------------------------------------------------------------------ results helpers
     @property
@@ -230,6 +232,7 @@ class Model:
                             base_Rz_kN=sum(ops.nodeReaction(n, 3) for n in self.fixed),
                             min_uz_mm=1e3 * min(ops.nodeDisp(n, 3) for n in range(1, len(self.coords) + 1)))
             ops.remove("loadPattern", k)
+            ops.remove("timeSeries", k)
             ops.wipeAnalysis()
             ops.setTime(0.0)
             ops.reset()
@@ -293,10 +296,21 @@ class Model:
             res[lab] = dict(ok=ok, base_walls_kN=Rw, base_columns_kN=Rc,
                             wall_share_pct=100 * Rw / (Rw + Rc), stories=rows)
             ops.remove("loadPattern", kk)
+            ops.remove("timeSeries", kk)
             ops.wipeAnalysis()
             ops.setTime(0.0)
             ops.reset()
         return res
+
+    def story_drift(self, direction, **kw):
+        """Story drift, torsion ratio and optional P-Delta. See openstructure.stability.story_drift."""
+        from .stability import story_drift
+        return story_drift(self, direction, **kw)
+
+    def stability(self, **kw):
+        """Stability index Q / theta per story, with a P-Delta check. See openstructure.stability.stability."""
+        from .stability import stability
+        return stability(self, **kw)
 
     def write_tcl(self, path):
         """Write every OpenSees command used to build the model (for audit / OpenSees Tcl)."""
