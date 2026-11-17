@@ -44,12 +44,15 @@ python -m openstructure building.e2k etabs_tables.e2k
 | Base FZ DL (kN) | 34480.6 | 34489.6 | +0.03 % |
 | Base FZ SDL (kN) | 1874.2 | 1874.2 | 0.00 % |
 | Base FZ LL (kN) | 8982.0 | 8982.0 | 0.00 % |
-| T1 (s) | 2.697 | 2.718 | +0.8 % |
-| T2 (s) | 1.784 | 1.786 | +0.1 % |
-| T3 (s) | 1.455 | 1.462 | +0.5 % |
-| T4 (s) | 0.732 | 0.730 | −0.3 % |
+| T1 (s) | 2.697 | 2.721 | +0.9 % |
+| T2 (s) | 1.784 | 1.789 | +0.3 % |
+| T3 (s) | 1.455 | 1.463 | +0.5 % |
+| T4 (s) | 0.732 | 0.731 | −0.1 % |
 
-Mode 5–12 ต่างไม่เกิน 3.1 % และ participating mass ratio ของทุก mode ตรงกันภายใน 0.02
+Mode 5–12 ต่างไม่เกิน 4 % และ participating mass ratio ของทุก mode ตรงกันภายใน 0.02
+
+แรงในชิ้นส่วน: แรงอัดเสาและผนัง core ตรงกับ ETABS ภายใน 1–2 % ส่วนแรงลมในผนัง core ได้แรงเฉือนน้อยกว่า ETABS ราว 5 %
+และโมเมนต์น้อยกว่าราว 10 % (การแบ่งแรงระหว่างผนังกับโครงพื้น-เสาไวต่อการจำลองจุดต่อพื้น-เสา ยังหาสาเหตุไม่จบ)
 
 ## Story drift, ค่า Q และ P-Delta
 
@@ -103,16 +106,36 @@ m.frame_forces()                                         # แรงในเส
 - `PATTERN "R-a-b"` อ่านเป็น a เส้นต่อด้านที่ขนานแกน 3 และ b เส้นต่อด้านที่ขนานแกน 2 ถ้าแบบจริงต่างให้ใส่
   `n_face3=`, `n_face2=`
 - ยังไม่ได้ทำ: δs สำหรับ combo แรงด้านข้าง (ให้ใช้ผล P-Delta), live load reduction, แรงเฉือน, รายละเอียดเหล็กปลอก
-- ลำดับถัดไป: lift core (ผนัง) → พื้น PT → บันได → ฐานราก
+
+## ตรวจออกแบบ lift core / ผนัง (ACI 318-14)
+
+```python
+from openstructure.etabs_tables import story_forces
+from openstructure.design.wall import check_walls, format_walls
+W = story_forces("etabs_tables.e2k", "W", bottom_story="FL.2")          # แรงลมต่อชั้นจาก ETABS
+m.add_lateral_case("WX", "X", W[1]["X"], W[1]["y_of_X"])                # ใส่เป็น load case ของเรา
+m.add_lateral_case("WY", "Y", W[2]["Y"], W[2]["x_of_Y"])
+combos = {"0.9D+1.6WY": {"DL": 0.9, "SDL": 0.9, "WY": 1.6}, ...}
+rows, secs = check_walls(m, combos, fc=23.5, rho_v=0.0025, rho_h=0.0025)
+print(format_walls(rows, secs))
+m.wall_forces()      # P, Vx, Vy, Mx, My, T ของ pier ที่โคนผนังแต่ละชั้น
+```
+
+- ตัดหน้าตัดแนวราบผ่านผนังทุกแผ่นของ pier ที่โคนชั้น (รูปกล่อง, C, L ได้หมด) แล้วรวมแรงรอบ centroid
+- P-M-M: strain compatibility ของหน้าตัดจริง เหล็กยืนกระจายตาม ρv, φ 0.65–0.90, φPn ≤ 0.80φPo
+- แรงเฉือน (ข้อ 11.5.4): Vn = (0.17√f'c + ρt·fy)·Σ(t·0.8lw) ≤ 0.83√f'c·Σ(t·0.8lw), φ 0.75
+- e2k ไม่มีเหล็กผนัง ต้องใส่ ρv, ρh เอง (ค่าเริ่มต้น 0.0025)
+- ยังไม่ได้ตรวจ: boundary element, ความชะลูดผนัง, คานทับหลัง (lintel), แรงบิด
 
 ## ข้อตกลงการแปลง (ห้ามเปลี่ยนเงียบ ๆ ถ้าเปลี่ยนต้องขึ้นเวอร์ชันและรัน test ใหม่)
 
 - สร้างเฉพาะ object ที่มี LINE/AREA ASSIGNS
 - Mesh: กริดโครงสร้างเดียวผ่านทุกพิกัดสำคัญ แบ่งไม่เกิน 1.25 m (พื้น) และ 0.5 m (ผนัง) ต้องเป็นขอบขนานแกน
 - พื้น/ผนัง: `ShellMITC4` + `ElasticMembranePlateSection` ใช้ modifier F11 (membrane) และ M11 (bending)
-- **ถ้า M12MOD ของพื้นต่างจาก M11MOD** (เช่น ตั้ง M11 = M22 = 0.25 แต่ปล่อย M12 = 1 ตามค่าเริ่มต้น ETABS)
-  จะใช้ `LayeredShell` + `ElasticOrthotropic` เพื่อให้ twisting stiffness ตรงกับ ETABS
-  (กรณีอาคารอ้างอิง: ถ้าไม่ทำ T1 จะเพี้ยน +14 %)
+- **ถ้า modifier แรงเฉือนของพื้น (F12, M12) ต่างจากค่าแนวตรง (F11, M11)** เช่น ตั้ง M11 = M22 = 0.25 แต่ปล่อย
+  M12 = 1 ตามค่าเริ่มต้น ETABS จะใช้ `LayeredShell` + `ElasticOrthotropic` แบบแกนกลาง + ผิวสองด้าน แล้วแก้สมการหา
+  E และ G12 ของแต่ละชั้นให้ผลรวมตรงกับ F11, M11, F12, M12 พอดี (กรณีอาคารอ้างอิง: ถ้าไม่ทำ T1 จะเพี้ยน +14 %)
+  ส่วน transverse shear ไม่คูณ modifier เพราะ ShellThin ของ ETABS ไม่มี shear deformation
 - เสา/คาน: `elasticBeamColumn` (Euler-Bernoulli), modifier จาก section x assign, แบ่งที่ทุก node บนชิ้นส่วน
 - พื้นซ้อนทับกัน: ชิ้นแรกให้ความแข็ง/น้ำหนัก ส่วน area load ของทุกชิ้นที่ทับถูกใส่ครบ (เหมือน ETABS)
 - มวล: self-mass ของ element เท่านั้น เฉพาะ UX/UY รวมที่ระดับชั้น
@@ -125,7 +148,7 @@ m.frame_forces()                                         # แรงในเส
 
 1. ✅ ตัวสร้างโมเดล + ตรวจสอบกับ ETABS (gravity, mass, modal)
 2. ✅ P-Delta, stability Q, story drift, ELF ตาม มยผ. 1301/1302-61 ⬜ RSA, accidental torsion, แอ่งกรุงเทพ
-3. ตรวจออกแบบ คสล. (ACI 318-14): ✅ เสา ⬜ lift core, พื้น PT, บันได, ฐานราก
+3. ตรวจออกแบบ คสล. (ACI 318-14): ✅ เสา ✅ lift core ⬜ พื้น PT, บันได, ฐานราก
 4. Nonlinear: fiber section, pushover, NLTHA, IDA
 5. รายงาน + 3D viewer
 

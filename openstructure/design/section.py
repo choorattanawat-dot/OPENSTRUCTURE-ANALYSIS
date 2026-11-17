@@ -74,6 +74,10 @@ class RectColumn:
         return self.D * self.B
 
     @property
+    def diag(self):
+        return math.hypot(self.D, self.B)
+
+    @property
     def Ast(self):
         return sum(b[2] for b in self.bars)
 
@@ -127,7 +131,7 @@ class RectColumn:
         """Design surface points (phi Pn kN, phi M2 kN-m, phi M3 kN-m), shape (n_theta, n_c, 3),
         with phi Pn capped at phiPn_max. Cached."""
         if self._surf is None or self._surf.shape[:2] != (n_theta, n_c):
-            diag = math.hypot(self.D, self.B)
+            diag = self.diag
             cs = np.concatenate([np.geomspace(20 * diag, 1.2 * diag, 8, endpoint=False),
                                  np.linspace(1.2 * diag, 0.02 * diag, n_c - 8)])
             S = np.zeros((n_theta, n_c, 3))

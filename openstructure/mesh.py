@@ -230,7 +230,8 @@ def shell_props(M, d):
     fF = p.get("F11MOD", 1) * d.get("PROPMODF11", 1)       # membrane (F11=F22=F12 assumed)
     fM_ = p.get("M11MOD", 1) * d.get("PROPMODM11", 1)      # bending
     fM12 = p.get("M12MOD", 1) * d.get("PROPMODM12", 1)     # twisting
+    fF12 = p.get("F12MOD", 1) * d.get("PROPMODF12", 1)     # membrane shear
     mm = p.get("MMOD", 1) * d.get("PROPMODM", 1); wm = p.get("WMOD", 1) * d.get("PROPMODW", 1)
     gam = mat["WEIGHTPERVOLUME"] * 1e6
-    return dict(E=mat["E"] * 1e3, nu=mat.get("U", 0.2), t=t, fF=fF, fM=fM_, fM12=fM12, wpa=gam * t * wm, mpa=gam * t * mm / G_ACC,
+    return dict(E=mat["E"] * 1e3, nu=mat.get("U", 0.2), t=t, fF=fF, fM=fM_, fM12=fM12, fF12=fF12, wpa=gam * t * wm, mpa=gam * t * mm / G_ACC,
                 mtype=p.get("mtype", "ShellThin"))

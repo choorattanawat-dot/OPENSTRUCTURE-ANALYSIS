@@ -158,6 +158,9 @@ def parse_e2k(path):
         if not m:
             continue
         d = {"name": t[0], "story": t[1], "sec": m.group(1)}
+        mp = re.search(r'PIER\s+"([^"]+)"', l)
+        if mp:
+            d["pier"] = mp.group(1)
         for k in ("PROPMODF11", "PROPMODF22", "PROPMODF12", "PROPMODM11", "PROPMODM22", "PROPMODM12", "PROPMODM", "PROPMODW"):
             v = _num(l, k)
             if v is not None:
