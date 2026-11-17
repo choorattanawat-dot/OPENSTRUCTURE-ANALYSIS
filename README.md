@@ -138,6 +138,19 @@ print(format_reactions(res))                          # ตาราง Fz ต�
 รายงานตาม label จุดของ ETABS ส่วน node ฐานผนังที่ไม่ใช่จุดของ ETABS รวมเข้าจุดที่ใกล้ที่สุด และบวกน้ำหนักที่ลงบนจุดรองรับ
 โดยตรงกลับเข้า Fz ให้ครบ เทียบ ETABS: เสาตรงภายใน 2 % (ต้นมุม 4 %), ผลรวม core ตรงภายใน 1 %
 
+## Pile cap (ACI 318-14 ข้อ 13.4)
+
+```python
+from openstructure.design.pilecap import PileCap, pile_layout, design_pilecap, format_pilecap
+cap = PileCap(pile_layout(10, 1.05, rotate=True), pile_size=0.35, h=1.20, col=(0.4, 0.8), fc=23.5, fy=390)
+r = cap.check(Pu=7042)                 # flexure, one-way shear, punching ที่เสาและที่เข็ม
+cap, res = design_pilecap(10, 0.35, (0.4, 0.8), (4813, 0, 0), [("U1", 7042, 0, 0)], fc=23.5)   # หาความหนาน้อยสุด
+print(format_pilecap(cap, res))
+```
+
+- cap แข็ง เข็มรับแรงแกนอย่างเดียว: R = P/n + Mx·y/Σy² − My·x/Σx²; ผังเข็มมาตรฐาน 1–12 ต้น (10 ต้น = 3-4-3)
+- แรงเฉือนนับแรงเข็มบางส่วนตามข้อ 13.4.2.5; ยังไม่มี strut-and-tie (13.2.6.3), แรงด้านข้างเข็ม, เข็มรับแรงถอน
+
 ## ข้อตกลงการแปลง (ห้ามเปลี่ยนเงียบ ๆ ถ้าเปลี่ยนต้องขึ้นเวอร์ชันและรัน test ใหม่)
 
 - สร้างเฉพาะ object ที่มี LINE/AREA ASSIGNS
