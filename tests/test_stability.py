@@ -59,3 +59,12 @@ def test_pdelta_amplification(model):
     # PDelta transformation (one element) = linearised geometric stiffness P/L: amp = 1 / (1 - P L^2 / (3 EI))
     assert r["amp_pdelta"] == pytest.approx(1 / (1 - P * L ** 2 / (3 * EI)), rel=1e-4)
     assert r["amp_pdelta"] == pytest.approx(r["amp_1_over_1mQ"], rel=1e-4)
+
+
+def test_base_reaction_includes_load_on_support(model):
+    from openstructure.reactions import base_reactions
+    res = base_reactions(model, {"U": {"DL": 1.4}})
+    W = 24 * 0.4 * 0.4 * L
+    assert res["DL"]["1"]["Fz"] == pytest.approx(W)          # full column weight, not only the top half
+    assert res["U"]["1"]["Fz"] == pytest.approx(1.4 * W)
+    assert (res["DL"]["1"]["x"], res["DL"]["1"]["y"]) == (0.0, 0.0)

@@ -127,6 +127,17 @@ m.wall_forces()      # P, Vx, Vy, Mx, My, T ของ pier ที่โคนผ
 - e2k ไม่มีเหล็กผนัง ต้องใส่ ρv, ρh เอง (ค่าเริ่มต้น 0.0025)
 - ยังไม่ได้ตรวจ: boundary element, ความชะลูดผนัง, คานทับหลัง (lintel), แรงบิด
 
+## Base reaction รายจุด
+
+```python
+from openstructure.reactions import base_reactions, format_reactions
+res = base_reactions(m, combos=m.M["combos"])        # ทุก load pattern + combo
+print(format_reactions(res))                          # ตาราง Fz ต่อจุด (เลือก component="Fx" ฯลฯ ได้)
+```
+
+รายงานตาม label จุดของ ETABS ส่วน node ฐานผนังที่ไม่ใช่จุดของ ETABS รวมเข้าจุดที่ใกล้ที่สุด และบวกน้ำหนักที่ลงบนจุดรองรับ
+โดยตรงกลับเข้า Fz ให้ครบ เทียบ ETABS: เสาตรงภายใน 2 % (ต้นมุม 4 %), ผลรวม core ตรงภายใน 1 %
+
 ## ข้อตกลงการแปลง (ห้ามเปลี่ยนเงียบ ๆ ถ้าเปลี่ยนต้องขึ้นเวอร์ชันและรัน test ใหม่)
 
 - สร้างเฉพาะ object ที่มี LINE/AREA ASSIGNS

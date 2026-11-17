@@ -189,12 +189,13 @@ def build(M, SLAB_H=1250.0, WALL_H=500.0, MERGE_TOL=25.0):
                 segs.append(dict(f, n=(node(*p0), node(*p1)), L=(t1 - t0) * L / 1e3))
     # restraints (base points + every node at a restrained level/position)
     fixed = {}
+    labels = {}                      # support node -> ETABS point label
     base_z = elev[stories[0]]
     for (pid, s), dofs in M["rest"].items():
         if s == stories[0]:
             x, y = snapx(pts[pid][0]), snapy(pts[pid][1])
             k = (round(x), round(y), round(elev[s] - pts[pid][2]))
-            if k in nodes: fixed[nodes[k]] = dofs
+            if k in nodes: fixed[nodes[k]] = dofs; labels[nodes[k]] = pid
     # wall base mesh nodes (ETABS ADDRESTRAINT on walls / auto-mesh restraint at base)
     wall_base = set()
     for sh in shells:
@@ -202,7 +203,7 @@ def build(M, SLAB_H=1250.0, WALL_H=500.0, MERGE_TOL=25.0):
             for t in sh["n"]:
                 if coords[t - 1][2] == round(base_z): wall_base.add(t)
     for t in wall_base: fixed.setdefault(t, ["UX", "UY", "UZ"])
-    return dict(coords=coords, shells=shells, frames=segs, fixed=fixed, gx=gx, gy=gy, warn=warn,
+    return dict(coords=coords, shells=shells, frames=segs, fixed=fixed, support_labels=labels, gx=gx, gy=gy, warn=warn,
                 elev=dict(elev), stories=stories)
 
 # ---------------------------------------------------------------- section properties
