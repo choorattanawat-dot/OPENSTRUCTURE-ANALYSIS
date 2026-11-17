@@ -261,7 +261,7 @@ def crsi_check(cap, R, phi_v=0.85, phi_f=0.90, tol=0.075, weight_factor=None, lo
         out[tag] = dict(Vu=max(Vu, 0.0), phiVc=phi_v * 2 * PSI * rt * width * d * 1e3)
     # 4: two-way at the column face
     ws = {ax: w_of(ax) for ax in ("x", "y")}
-    wv = sorted({round(w, 6) for w in ws.values() if w is not None})
+    wv = sorted({round(w, 6) for w in ws.values() if w is not None and w < d})   # a direction with w >= d is covered by limit state 1
     if cap.round_col:                                       # radial distance to the nearest pile outside the column
         rr = [math.hypot(*p) + tol - c["x"] / 2 for p in cap.piles if math.hypot(*p) > c["x"] / 2]
         wv = [min(rr)] if rr else []
