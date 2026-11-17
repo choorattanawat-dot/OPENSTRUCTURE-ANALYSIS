@@ -10,25 +10,35 @@ Checks (sectional method; pile reactions act at pile centres, 13.4.2.2):
 Units: kN, m, kN-m in and out; f'c, fy in MPa. Axes x, y are the cap axes with the column at the origin;
 Mx, My are moments about x and y at the top of the cap (right-hand rule), Fz positive down on the cap.
 
-Not covered: strut-and-tie for deep caps (13.2.6.3), where most piles sit closer than d to the column
-the sectional one-way check sees almost no shear; lateral pile loads; pile tension anchorage.
+Deep caps, where piles sit closer than d to the column so that the sectional checks see little shear, are
+covered by crsi_check() below (CRSI Design Guide for Pile Caps 2015, ch. 5: checks at the column face).
+Not covered: strut-and-tie (13.2.6.3), lateral pile loads, pile tension anchorage.
 """
 import math
 from dataclasses import dataclass, field
 
-ROWS = {1: [1], 2: [2], 3: [2, 1], 4: [2, 2], 5: [2, 1, 2], 6: [3, 3], 7: [2, 3, 2], 8: [3, 2, 3],
-        9: [3, 3, 3], 10: [3, 4, 3], 11: [4, 3, 4], 12: [4, 4, 4]}
+ROWS = {1: [1], 2: [2], 3: [2, 1], 4: [2, 2], 6: [3, 3], 7: [2, 3, 2], 8: [3, 2, 3],
+        9: [3, 3, 3], 10: [3, 4, 3], 11: [4, 3, 4], 12: [4, 4, 4], 16: [4, 4, 4, 4]}
 
 
 def pile_layout(n, spacing, rotate=False):
-    """Standard pattern for n piles, centre-to-centre distance >= spacing, centred on the origin.
-    Rows run along x; rows with different counts are staggered (row distance 0.866 spacing).
-    rotate=True turns the pattern so that the rows run along y."""
-    rows = ROWS[n]
-    ys = [0.0]
-    for a, b in zip(rows, rows[1:]):
-        ys.append(ys[-1] + spacing * (1.0 if a == b else math.sqrt(3) / 2))
-    pts = [((i - (m - 1) / 2) * spacing, y) for m, y in zip(rows, ys) for i in range(m)]
+    """CRSI standard pattern (Design Guide for Pile Caps 2015, Fig. 4.4) for n = 1..13 or 16 piles, centred on the
+    origin, centre-to-centre distance >= spacing. Rows run along x (the long side A); rows with different counts
+    are staggered (row distance 0.866 spacing). The patterns reproduce Ix, Iy of CRSI Table 6.1 (see tests).
+    rotate=True turns the pattern so that the long side runs along y."""
+    L = spacing
+    if n == 5:                                  # four piles on the diagonals at L from the centre pile
+        a = L / math.sqrt(2)
+        pts = [(-a, -a), (a, -a), (0.0, 0.0), (-a, a), (a, a)]
+    elif n == 13:                               # quincunx: rows 3-2-3-2-3, row distance L / 2
+        r3, r2 = (-math.sqrt(3) * L, 0.0, math.sqrt(3) * L), (-math.sqrt(3) / 2 * L, math.sqrt(3) / 2 * L)
+        pts = [(x, y) for y, r in zip((-L, -L / 2, 0.0, L / 2, L), (r3, r2, r3, r2, r3)) for x in r]
+    else:
+        rows = ROWS[n]
+        ys = [0.0]
+        for a, b in zip(rows, rows[1:]):
+            ys.append(ys[-1] + L * (1.0 if a == b else math.sqrt(3) / 2))
+        pts = [((i - (m - 1) / 2) * L, y) for m, y in zip(rows, ys) for i in range(m)]
     cx = sum(p[0] for p in pts) / n
     cy = sum(p[1] for p in pts) / n
     pts = [(x - cx, y - cy) for x, y in pts]
@@ -157,4 +167,131 @@ def format_pilecap(cap, res):
     for k, lab in (("punch_col", "punching at column"), ("punch_pile", "punching at pile")):
         p = r[k]
         o.append(f"  {lab}: Vu {p['Vu']:.0f} / phiVc {p['phiVc']:.0f} kN = {p['DC']:.2f} (bo {p['bo']:.2f} m)")
+    return "\n".join(o)
+
+
+# ---------------------------------------------------------------- CRSI Design Guide for Pile Caps (2015), chapter 5
+PSI = 0.083036          # sqrt(f'c in psi) [psi]  =  PSI * sqrt(f'c in MPa) [MPa] / 0.00689476 ... i.e. k sqrt(psi) -> k * PSI sqrt(MPa)
+
+
+def crsi_check(cap, R, phi_v=0.85, phi_f=0.90, tol=0.075, weight_factor=None, load_factor=1.6):
+    """CRSI limit states for a PileCap and factored pile reactions R (kN; one value = the same in every pile).
+
+    CRSI's own safety format is load factor 1.6 on (D + L) with phi 0.85 in shear and 0.90 in bending; with
+    ACI 318-14 load combinations use phi_v = 0.75 and weight_factor = 1.2. The factored cap weight outside each
+    critical section is deducted (weight_factor defaults to load_factor). tol = adverse pile placement
+    tolerance (3 in.), added to every pile distance. Piles are treated as round with the same area.
+
+    Limit states (CRSI numbering):  1 two-way at d/2 from the column,  2/3 one-way at d from the column,
+    4 two-way at the column face (only when w < d/2),  5/6 one-way at the column face (only when w < d),
+    P1 single pile punching, P2 two adjacent piles, P3 corner pile punching, P4 corner pile one-way.
+    w = distance from the column face to the nearest pile line, including tol. Direction "x" means a section
+    normal to x. For a rectangular column cx and cy are used per direction and (1 + d/c) of limit state 4 becomes
+    bo / bs = 1 + 2 d / (cx + cy)  (CRSI itself assumes a square column).
+    Returns {name: dict(Vu, phiVc, DC, ...)} plus "flexure" and "DC_max"."""
+    n = len(cap.piles)
+    R = [float(R)] * n if not hasattr(R, "__len__") else list(R)
+    wf = load_factor if weight_factor is None else weight_factor
+    d, rt = cap.d, math.sqrt(cap.fc)
+    A, B, D = cap.Lx, cap.Ly, cap.h
+    q = wf * cap.gamma_c * D                                # factored cap weight per unit area, kN/m2
+    c = {"x": cap.col[0], "y": cap.col[1]}
+    side = {"x": A, "y": B}
+    dp = cap.pile_size if cap.round_pile else cap.pile_size * math.sqrt(4 / math.pi)
+    out = {}
+
+    def coord(p, ax):
+        return abs(p[0] if ax == "x" else p[1]) + tol
+
+    def w_of(ax):                                           # nearest pile line beyond the column face
+        v = [coord(p, ax) - c[ax] / 2 for p in cap.piles if coord(p, ax) - tol > c[ax] / 2 - 1e-9]
+        return min(v) if v else None
+
+    # flexure: section at c/4 from the column centre, reinforcement by strain compatibility
+    fl = {}
+    for ax in ("x", "y"):
+        k, width, L_ = (0 if ax == "x" else 1), side["y" if ax == "x" else "x"], side[ax]
+        Mu = 0.0
+        for sgn in (1, -1):
+            m = sum(r * (sgn * p[k] + tol - c[ax] / 4) for p, r in zip(cap.piles, R) if sgn * p[k] > c[ax] / 4)
+            Mu = max(Mu, m - q * width * (L_ / 2 - c[ax] / 4) ** 2 / 2)
+        Rn = Mu * 1e-3 / (phi_f * width * d * d)
+        t = 1 - 2 * Rn / (0.85 * cap.fc)
+        As = 0.85 * cap.fc / cap.fy * (1 - math.sqrt(t)) * width * d * 1e4 if t > 0 else float("nan")
+        rho = max(1.379 / cap.fy, 3 * PSI * rt / cap.fy)    # 200/fy and 3 sqrt(f'c)/fy in psi
+        a1, a2, a3 = rho * width * d * 1e4, 4 / 3 * As, 0.0018 * width * D * 1e4
+        req = As if As >= a1 else (a1 if a1 <= a2 else (a2 if a3 <= a2 else min(a3, a1)))
+        fl[ax] = dict(Mu=Mu, width=width, As=As, As_req=req)
+    beta = max(A, B) / min(A, B)
+    short = "x" if A < B else "y"                           # bars spanning the short side
+    if beta > 1.0 + 1e-9:
+        fl[short]["As_req"] *= 2 * beta / (beta + 1)        # uniform spacing instead of the ACI 13.3.3.3 band
+    out["flexure"] = fl
+
+    # 1: two-way at d/2 from the column
+    a, b = (c["x"] + d) / 2, (c["y"] + d) / 2
+    Vu = sum(r for p, r in zip(cap.piles, R) if coord(p, "x") > a or coord(p, "y") > b) - q * (A * B - 4 * a * b)
+    bo = 4 * (a + b)
+    bc = max(c.values()) / min(c.values())
+    vc = min(4.0, 2 + 4 / bc, 40 * d / bo + 2) * PSI * rt
+    out["1 two-way d/2"] = dict(Vu=Vu, phiVc=phi_v * vc * bo * d * 1e3)
+    # 2, 3: one-way at d from the column face
+    for ax, tag in (("x", "2/3 one-way at d, section normal to x"), ("y", "2/3 one-way at d, section normal to y")):
+        k, width, L_ = (0 if ax == "x" else 1), side["y" if ax == "x" else "x"], side[ax]
+        xs = c[ax] / 2 + d
+        Vu = max(sum(r for p, r in zip(cap.piles, R) if sgn * p[k] + tol > xs) for sgn in (1, -1))
+        Vu -= q * width * max(L_ / 2 - xs, 0.0)
+        out[tag] = dict(Vu=max(Vu, 0.0), phiVc=phi_v * 2 * PSI * rt * width * d * 1e3)
+    # 4: two-way at the column face
+    ws = {ax: w_of(ax) for ax in ("x", "y")}
+    wv = [w for w in ws.values() if w is not None]
+    if wv and min(wv) < d / 2:
+        bs = 2 * (c["x"] + c["y"])
+        Vu = sum(r for p, r in zip(cap.piles, R) if coord(p, "x") - tol > c["x"] / 2 or coord(p, "y") - tol > c["y"] / 2)
+        Vu -= q * (A * B - c["x"] * c["y"])
+        vcs = [min(d / w * (1 + 4 * d / bs) * 2 * PSI * rt, 32 * PSI * rt) for w in wv]
+        out["4 two-way at column face"] = dict(Vu=Vu, phiVc=phi_v * sum(vcs) / len(vcs) * bs * d * 1e3, w=ws)
+    # 5, 6: one-way at the column face
+    for ax in ("x", "y"):
+        w = ws[ax]
+        if w is None or w >= d:
+            continue
+        k, width, L_ = (0 if ax == "x" else 1), side["y" if ax == "x" else "x"], side[ax]
+        best = None
+        for sgn in (1, -1):
+            sel = [(sgn * p[k] + tol - c[ax] / 2, r) for p, r in zip(cap.piles, R) if sgn * p[k] > c[ax] / 2]
+            arm = L_ / 2 - c[ax] / 2
+            V = sum(r for _, r in sel) - q * width * arm
+            M = sum(r * x for x, r in sel) - q * width * arm ** 2 / 2
+            if best is None or V > best[0]:
+                best = (V, M)
+        V, M = best
+        mv = min(M / (V * d), 1.0)
+        vc = min(d / w * (3.5 - 2.5 * mv) * (1.9 + 0.1 / mv) * PSI * rt, 10 * PSI * rt)
+        out[f"5/6 one-way at column face, section normal to {ax}"] = dict(Vu=V, Mu=M, phiVc=phi_v * vc * width * d * 1e3, w=w)
+    # piles
+    Rmax = max(R)
+    v4 = phi_v * 4 * PSI * rt * d * 1e3
+    out["P1 pile punching"] = dict(Vu=Rmax, phiVc=v4 * math.pi * (dp + d))
+    Lmin = min(math.dist(p, r) for i, p in enumerate(cap.piles) for r in cap.piles[i + 1:]) if n > 1 else None
+    if Lmin:
+        out["P2 two piles punching"] = dict(Vu=2 * Rmax, phiVc=v4 * (math.pi * (dp + d) + 2 * Lmin))
+    out["P3 corner pile punching"] = dict(Vu=Rmax, phiVc=v4 * (math.pi * (dp + d) / 4 + 2 * cap.edge))
+    bb = 2 * (cap.edge * math.sqrt(2) + dp / 2 + min(d, 0.330))
+    out["P4 corner pile one-way"] = dict(Vu=Rmax, phiVc=phi_v * 2 * PSI * rt * bb * d * 1e3)
+    for k, v in out.items():
+        if k != "flexure":
+            v["DC"] = v["Vu"] / v["phiVc"]
+    out["DC_max"] = max(v["DC"] for k, v in out.items() if k != "flexure")
+    return out
+
+
+def format_crsi(res):
+    o = [f"{'CRSI limit state':<52}{'Vu kN':>9}{'phiVc kN':>10}{'D/C':>7}"]
+    for k, v in res.items():
+        if k in ("flexure", "DC_max"):
+            continue
+        o.append(f"{k:<52}{v['Vu']:>9.0f}{v['phiVc']:>10.0f}{v['DC']:>7.2f}")
+    for ax, f in res["flexure"].items():
+        o.append(f"flexure, bars along {ax}: Mu {f['Mu']:.0f} kN-m, As {f['As']:.0f} cm2, required {f['As_req']:.0f} cm2 over {f['width']:.2f} m")
     return "\n".join(o)
