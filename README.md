@@ -70,6 +70,21 @@ m.stability(gravity_factors={"DL": 1, "SDL": 1, "LL": 1},    # น้ำหน�
   ผนังและพื้นเป็น shell ไม่มี geometric stiffness จึงได้ P-Delta เฉพาะแรงอัดที่ลงเสา
 - ตรวจกับสูตรมือ (เสายื่น): drift = FL³/3EI และ amplification = 1/(1 − PL²/3EI) ตรงกัน
 
+## แรงแผ่นดินไหว มยผ. 1301/1302-61 (นอกแอ่งกรุงเทพ)
+
+```python
+from openstructure.dpt import Site, elf, format_elf
+site = Site.named("ขอนแก่น อ.เมือง", soil="D", occupancy="II")   # หรือ Site(Ss, S1, soil, occupancy)
+site.SDS, site.SD1, site.sdc()                                    # 0.0565, 0.0480, "ก"
+T = m.modal(3)["periods_s"]
+res = elf(m, site, system="bf_ordinary_rc_wall", T_model={"X": T[2], "Y": T[1]})
+print(format_elf(res))
+```
+
+ได้ Fa/Fv (ตาราง 1.4-2, 1.4-3), SDS/SD1, สเปกตรัม (รูป 1.4-1 ถึง 1.4-4), ประเภทการออกแบบ (ตาราง 1.6-1, 1.6-2),
+Ta = 0.02H, Cs = Sa·I/R ≥ 0.01, การกระจายแรง Cvx, δx = Cd·δxe/I เทียบ Δa (ตาราง 2.11-1) และ θ (สมการ 3.8-1)
+ยังไม่มี: สเปกตรัมแอ่งกรุงเทพ, accidental torsion, RSA
+
 ## ข้อตกลงการแปลง (ห้ามเปลี่ยนเงียบ ๆ ถ้าเปลี่ยนต้องขึ้นเวอร์ชันและรัน test ใหม่)
 
 - สร้างเฉพาะ object ที่มี LINE/AREA ASSIGNS
@@ -89,7 +104,7 @@ m.stability(gravity_factors={"DL": 1, "SDL": 1, "LL": 1},    # น้ำหน�
 ## แผนงาน
 
 1. ✅ ตัวสร้างโมเดล + ตรวจสอบกับ ETABS (gravity, mass, modal)
-2. ✅ P-Delta, stability Q, story drift ⬜ ELF/RSA ตาม มยผ. 1301/1302-61
+2. ✅ P-Delta, stability Q, story drift, ELF ตาม มยผ. 1301/1302-61 ⬜ RSA, accidental torsion, แอ่งกรุงเทพ
 3. ตรวจออกแบบ คสล. (ACI 318 / วสท.)
 4. Nonlinear: fiber section, pushover, NLTHA, IDA
 5. รายงาน + 3D viewer
